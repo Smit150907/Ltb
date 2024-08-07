@@ -4,16 +4,16 @@ from telethon.sessions import StringSession
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-# Define your API ID, hash, bot token, and session here
+# Define your API ID, hash, bot token, and session string
 API_ID = 21476260
 API_HASH = 'ec9654f315ce63225cf7b69263347f96'
 BOT_TOKEN = '7115849425:AAFbnodmwYjQ8QTrQKbMkZve6x6ePhEvstI'
-SESSION = '1BVtsOGcBu3ZNajXAuLKlJ3igTnlsCDyRgMogJB4lhor-v6BkEYCdjJaUmQZhTdPTJBh4dcGJWcuAJyH2uV13ATSw7dqlbrPNMKepW_XPQ8KzMpjN93viaUjM-ZgdOVOa4NGHgm55tEc1DgdW3V4ABA9Z026L4BsMHzAJuhBV9MNl6boNo3Pu5EyO2HeTCIpiaCGA5JRn8WKvhsjHvQgorOFxaWxjvENXQ1ncJHQ3mBOkia5tbeW--vQKjbLnxOpdlfoxuXAerAdTmxfYguo6dIyFCEybywE1cPgb3EGoEy6t9BDTNI-Tmq3Fvna-VviRzbRUV7IefuInT2xYEgCN6ZmD8ZpL3V4='
+SESSION_STRING = '1BVtsOGcBu3ZNajXAuLKlJ3igTnlsCDyRgMogJB4lhor-v6BkEYCdjJaUmQZhTdPTJBh4dcGJWcuAJyH2uV13ATSw7dqlbrPNMKepW_XPQ8KzMpjN93viaUjM-ZgdOVOa4NGHgm55tEc1DgdW3V4ABA9Z026L4BsMHzAJuhBV9MNl6boNo3Pu5EyO2HeTCIpiaCGA5JRn8WKvhsjHvQgorOFxaWxjvENXQ1ncJHQ3mBOkia5tbeW--vQKjbLnxOpdlfoxuXAerAdTmxfYguo6dIyFCEybywE1cPgb3EGoEy6t9BDTNI-Tmq3Fvna-VviRzbRUV7IefuInT2xYEgCN6ZmD8ZpL3V4='
 RECIPIENT_USERNAME = '@probrotradee'  # Recipient's username for notifications
 
 # Initialize Telegram clients
-app = TelegramClient('bt', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-ass = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
+app = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+ass = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # Initialize data structures
 verified_traders = {}  # Dictionary to store trader ID and corresponding username
@@ -21,21 +21,26 @@ ongoing_conversations = defaultdict(lambda: None)
 
 @app.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    user = await event.get_sender()
-    full_name = user.first_name
-    if user.last_name:
-        full_name += f" {user.last_name}"
-    welcome_message = (
-        f"Welcome {full_name} to Lets Trader Binary Auto-Verify Bot! "
-        "Please enter your trader ID here (only numbers). After successful verification, "
-        "we will remember your ID!"
-    )
-    await event.reply(welcome_message)
+    """Handle /start command."""
+    try:
+        user = await event.get_sender()
+        full_name = user.first_name
+        if user.last_name:
+            full_name += f" {user.last_name}"
+        welcome_message = (
+            f"Welcome {full_name} to the Lets Trader Binary Auto-Verify Bot! "
+            "Please enter your trader ID here (only numbers). After successful verification, "
+            "we will remember your ID!"
+        )
+        await event.reply(welcome_message)
+    except Exception as e:
+        print(f"Error in /start command handler: {e}")
 
 @app.on(events.NewMessage)
 async def handle_message(event):
+    """Handle incoming messages."""
     if event.is_private and not event.message.message.startswith('/'):
-        trader_id = event.message.message
+        trader_id = event.message.message.strip()
         if not trader_id.isdigit():
             await event.reply("Not a valid ID. Please enter numbers only.")
             return
@@ -97,7 +102,7 @@ async def handle_message(event):
                             verified_traders[trader_id] = username  # Store trader ID and username
 
                             await event.reply(
-                                "Thank you for providing me your trader ID 😊, I will remember you"
+                                "Thank you for providing your trader ID 😊, I will remember you."
                             )
                         else:
                             await event.reply(
@@ -108,45 +113,48 @@ async def handle_message(event):
                 else:
                     await event.reply("No deposits sum information found in the response.")
         except Exception as e:
-            print("Error:", e)
+            print(f"Error in handle_message: {e}")
             await event.reply("An error occurred while processing your request. Please try again later.")
 
 async def check_trader_status():
+    """Check the status of verified traders periodically."""
     while True:
-        now = datetime.now()
-        # Check every hour
-        next_run = now + timedelta(hours=1)
-        await asyncio.sleep((next_run - now).total_seconds())
-        
-        for trader_id, username in list(verified_traders.items()):
-            async with ass.conversation("QuotexPartnerBot") as conv:
-                await conv.send_message(trader_id)
-                response = await conv.get_response()
-                
-            response_lines = response.text.split('\n')
+        try:
+            now = datetime.now()
+            # Check every hour
+            next_run = now + timedelta(hours=1)
+            await asyncio.sleep((next_run - now).total_seconds())
             
-            if len(response_lines) > 5 and "ACCOUNT CLOSED" in response_lines[5]:
-                # Handle the case where the account is closed
-                await handle_account_closed(trader_id, username)
+            for trader_id, username in list(verified_traders.items()):
+                async with ass.conversation("QuotexPartnerBot") as conv:
+                    await conv.send_message(trader_id)
+                    response = await conv.get_response()
+                
+                response_lines = response.text.split('\n')
+                
+                if len(response_lines) > 5 and "ACCOUNT CLOSED" in response_lines[5]:
+                    # Handle the case where the account is closed
+                    await handle_account_closed(trader_id, username)
 
-                # Optionally, remove from verified_traders
-                verified_traders.pop(trader_id, None)
+                    # Optionally, remove from verified_traders
+                    verified_traders.pop(trader_id, None)
+        except Exception as e:
+            print(f"Error in check_trader_status: {e}")
 
 async def handle_account_closed(trader_id, username):
-    # Fetch recipient entity
-    recipient = await app.get_entity(RECIPIENT_USERNAME)
-
-    # Compose the notification message
-    message = (f"Trader ID {trader_id} with username @{username} has deleted their account.")
-    
-    # Send notification to the specified recipient
+    """Notify recipient about the closed account."""
     try:
+        recipient = await app.get_entity(RECIPIENT_USERNAME)
+        message = (f"Trader ID {trader_id} with username @{username} has deleted their account.")
         await app.send_message(recipient.id, message)
     except Exception as e:
         print(f"Error sending account closure notification: {e}")
 
 if __name__ == '__main__':
-    ass.start()
-    print("Assistant bot is running...")
-    app.loop.create_task(check_trader_status())
-    app.run_until_disconnected()
+    try:
+        ass.start()
+        print("Assistant bot is running...")
+        app.loop.create_task(check_trader_status())
+        app.run_until_disconnected()
+    except Exception as e:
+        print(f"Error running the bot: {e}")
